@@ -1,5 +1,6 @@
 """This module provides classes to store, generate,
 and manipulate interfaces, including grain boundaries.
+we added cellmatch
 """
 
 from __future__ import annotations
@@ -25,6 +26,8 @@ from pymatgen.core.structure import Structure
 from pymatgen.core.surface import Slab
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.util.typing import Tuple3Ints
+from pymatgen.analysis.interfaces.zsl import CellMatch
+
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
