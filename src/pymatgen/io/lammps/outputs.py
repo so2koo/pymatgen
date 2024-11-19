@@ -81,9 +81,8 @@ class LammpsDump(MSONable):
         Returns:
             LammpsDump
         """
-        items = {"timestep": dct["timestep"], "natoms": dct["natoms"]}
-        items["box"] = LammpsBox.from_dict(dct["box"])
-        items["data"] = pd.read_json(dct["data"], orient="split")
+        items = {"timestep": dct["timestep"], "natoms": dct["natoms"], "box": LammpsBox.from_dict(dct["box"])}
+        items["data"] = pd.read_json(StringIO(dct["data"]), orient="split")
         return cls(**items)
 
     def as_dict(self) -> dict[str, Any]:
@@ -170,7 +169,8 @@ def parse_lammps_log(filename: str = "log.lammps") -> list[pd.DataFrame]:
             for ts in time_steps:
                 data = {}
                 step = re.match(multi_pattern, ts[0])
-                assert step is not None
+                if step is None:
+                    raise ValueError("step is None")
                 data["Step"] = int(step[1])
                 data |= {k: float(v) for k, v in re.findall(kv_pattern, "".join(ts[1:]))}
                 dicts.append(data)

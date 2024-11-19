@@ -13,7 +13,6 @@ build-backend = "setuptools.build_meta"
 name = "pymatgen"
 authors = [{ name = "Pymatgen Development Team", email = "ongsp@ucsd.edu" }]
 maintainers = [
-    { name = "Janosh Riebesell", email = "janosh.riebesell@gmail.com" },
     { name = "Matthew Horton", email = "m.k.horton@gmail.com" },
     { name = "Shyue Ping Ong", email = "ongsp@ucsd.edu" },
 ]
@@ -22,7 +21,7 @@ Python Materials Genomics is a robust materials analysis code that defines core 
 and molecules with support for many electronic structure codes. It is currently the core analysis code powering the
 Materials Project (https://materialsproject.org)."""
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 keywords = [
     "ABINIT",
     "VASP",
@@ -57,8 +56,8 @@ classifiers = [
 dependencies = [
     "joblib>=1",
     "matplotlib>=3.8",
-    "monty>=2024.7.29",
-    "networkx>=2.2",
+    "monty>=2024.10.21",
+    "networkx>=2.7",  # PR4116
     "palettable>=3.3.3",
     "pandas>=2",
     "plotly>=4.5.0",
@@ -70,7 +69,7 @@ dependencies = [
     # https://github.com/scipy/scipy/issues/21052
     "scipy>=1.14.1; platform_system == 'Windows'",
     "spglib>=2.5.0",
-    "sympy>=1.2",
+    "sympy>=1.3",  # PR #4116
     "tabulate>=0.9",
     "tqdm>=4.60",
     "uncertainties>=3.1.4",
@@ -78,7 +77,7 @@ dependencies = [
     # https://numpy.org/devdocs/dev/depending_on_numpy.html#runtime-dependency-version-ranges
     "numpy>=1.25.0,<3",
 ]
-version = "2024.8.9"
+version = "2024.11.13"
 
 [project.urls]
 Homepage = "https://pymatgen.org"
@@ -88,37 +87,34 @@ Issues = "https://github.com/materialsproject/pymatgen/issues"
 Pypi = "https://pypi.org/project/pymatgen"
 
 [project.optional-dependencies]
+# PR4128: netcdf4 1.7.[0/1] yanked, 1.7.1.post[1/2]/1.7.2 cause CI error
+abinit = ["netcdf4>=1.6.5,!=1.7.1.post1,!=1.7.1.post2,!=1.7.2"]
 ase = ["ase>=3.23.0"]
-# don't depend on tblite above 3.11 since unsupported https://github.com/tblite/tblite/issues/175
-tblite = ["tblite[ase]>=0.3.0; python_version<'3.12'"]
-vis = ["vtk>=6.0.0"]
-abinit = ["netcdf4>=1.7.1"]
-mlp = ["chgnet>=0.3.8", "matgl>=1.1.1"]
-electronic_structure = ["fdint>=2.0.2"]
 ci = ["pytest-cov>=4", "pytest-split>=0.8", "pytest>=8"]
-docs = ["invoke", "sphinx", "sphinx_rtd_theme", "sphinx_markdown_builder"]
+docs = ["invoke", "sphinx", "sphinx_markdown_builder", "sphinx_rtd_theme"]
+electronic_structure = ["fdint>=2.0.2"]
+mlp = ["chgnet>=0.3.8", "matgl>=1.1.3"]
+numba = ["numba>=0.55"]
+numpy-v1 = ["numpy>=1.25.0,<2"] # Test NP1 on Windows (quite buggy ATM)
 optional = [
-    "ase>=3.23.0",
-    # TODO: uv cannot install BoltzTraP2
-    # "BoltzTraP2>=24.7.2 ; platform_system != 'Windows'",
+    "pymatgen[abinit,ase,mlp,tblite]",
+    "beautifulsoup4",
+    # BoltzTraP2 build fails on Windows GitHub runners
+    "BoltzTraP2>=24.9.4 ; platform_system != 'Windows'",
     "chemview>=0.6",
-    "chgnet>=0.3.8",
     "f90nml>=1.1.2",
     "galore>=0.6.1",
     "h5py>=3.11.0",
+    "hiphive>=1.3.1",
     "jarvis-tools>=2020.7.14",
-    "matgl>=1.1.1",
     "matplotlib>=3.8",
-    "netCDF4>=1.6.5",
     "phonopy>=2.23",
     "seekpath>=2.0.1",
-    # don't depend on tblite above 3.11 since unsupported https://github.com/tblite/tblite/issues/175
-    "tblite[ase]>=0.3.0; platform_system=='Linux' and python_version<'3.12'",
-    # "hiphive>=0.6",
-    # "openbabel>=3.1.1; platform_system=='Linux'",
 ]
-numba = ["numba>=0.55"]
-numpy1 = ["numpy>=1.25.0,<2"]  # Test NP1 on Windows (quite buggy ATM)
+# tblite only support Python 3.12+ through conda-forge
+# https://github.com/tblite/tblite/issues/175
+tblite = [ "tblite[ase]>=0.3.0; platform_system=='Linux' and python_version<'3.12'"]
+vis = ["vtk>=6.0.0"]
 
 [project.scripts]
 pmg = "pymatgen.cli.pmg:main"
@@ -160,10 +156,6 @@ include = ["pymatgen", "pymatgen.*"]
 [tool.pdm.dev-dependencies]
 lint = ["mypy>=1.10.0", "pre-commit>=3.7.1", "ruff>=0.4.9"]
 test = ["pytest-cov>=5.0.0", "pytest-split>=0.9.0", "pytest>=8.2.2"]
-
-[tool.versioningit.vcs]
-method = "git"
-default-tag = "0.0.1"
 
 [tool.cibuildwheel.linux]
 archs = ["auto64"]
@@ -220,7 +212,6 @@ ignore = [
     "PLR2004", # Magic-value-comparison TODO: fix these
     "PLW2901", # Outer for loop variable overwritten by inner assignment target
     "PT013",   # Incorrect import of pytest
-    "S101",    # Use of "assert"  TODO: fix these
     "S110",    # Log for try-except-pass
     "S112",    # Log for try-except-continue
     "S311",    # Use random module for cryptographic purposes
@@ -241,30 +232,39 @@ isort.known-first-party = ["pymatgen"]
 docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F401"]  # unused-import
+"__init__.py" = ["F401"] # unused-import
 "tests/**" = [
-    "ANN201",   # missing-return-type-undocumented-public-function
-    "D",        # pydocstyle
-    "PLR0124",  # comparison-with-itself
-    "PLR2004",  # magic-value-comparison
-    "PLR6301",  # no-self-use
-    ]
+    "ANN201",  # missing-return-type-undocumented-public-function
+    "D",       # pydocstyle
+    "PLR0124", # comparison-with-itself
+    "PLR2004", # magic-value-comparison
+    "PLR6301", # no-self-use
+    "S101",    # Use of "assert"
+]
 "src/pymatgen/analysis/*" = ["D"]
 "src/pymatgen/io/*" = ["D"]
 "dev_scripts/*" = ["D"]
 
 [tool.pytest.ini_options]
-addopts = "--durations=30 --quiet -r xXs --color=yes -p no:warnings --import-mode=importlib"
+addopts = "--durations=30 --quiet -r xXs --color=yes --import-mode=importlib"
+filterwarnings = [
+    # NOTE: the last matching option is used
+    "ignore::Warning",               # Ignore all Warning
+    "default::FutureWarning",        # Show FutureWarnings
+    "default::DeprecationWarning",   # Show DeprecationWarnings
+    # TODO: pybtex (perhaps some others) emits the following warnings
+    'ignore:pkg_resources is deprecated as an API:DeprecationWarning',
+    'ignore:distutils Version classes are deprecated:DeprecationWarning',
+    'ignore:Deprecated call to `pkg_resources.declare_namespace:DeprecationWarning',
+]
 
 [tool.coverage.run]
 parallel = true
 omit = [
-    "pymatgen/cli/feff_plot_cross_section.py",
-    "pymatgen/cli/feff_plot_dos.py",
+    "pymatgen/cli/feff_*.py",
     "pymatgen/cli/pmg_config.py",
     "pymatgen/cli/pmg_plot.py",
     "pymatgen/cli/pmg_potcar.py",
-    "pymatgen/cli/pmg_query.py",
     "pymatgen/dao.py",
 ]
 
@@ -293,12 +293,17 @@ module = ["requests.*", "tabulate.*"]
 ignore_missing_imports = true
 
 [tool.codespell]
-ignore-words-list = """
-titel,alls,ans,nd,mater,nwo,te,hart,ontop,ist,ot,fo,nax,coo,
-coul,ser,leary,thre,fase,rute,reson,titels,ges,scalr,strat,
-struc,hda,nin,ons,pres,kno,loos,lamda,lew,atomate,nempty
+# TODO: un-ignore "ist/nd/ot/ontop/CoO" once support file-level ignore with pattern
+ignore-words-list = """Nd, Te, titel, Mater,
+Hart, Lew, Rute, atomate,
+ist, nd, ot, ontop, CoO
 """
-skip = "pymatgen/analysis/aflow_prototypes.json"
+# TODO: un-skip lammps/test_inputs.py once support block ignore with pattern
+skip = """*.json,
+src/pymatgen/analysis/chemenv/coordination_environments/coordination_geometries_files/allcg.txt,
+src/pymatgen/entries/MPCompatibility.yaml,
+tests/io/lammps/test_inputs.py,
+"""
 check-filenames = true
 
 [tool.pyright]

@@ -178,7 +178,11 @@ class ChemicalPotentialDiagram(MSONable):
                 elems = elems[:3]  # default to first three elements
 
         if len(elems) == 2 and self.dim == 2:
-            fig = self._get_2d_plot(elements=elems, label_stable=label_stable, element_padding=element_padding)
+            fig = self._get_2d_plot(
+                elements=elems,
+                label_stable=label_stable,
+                element_padding=element_padding,
+            )
         elif len(elems) == 2 and self.dim > 2:
             entries = [e for e in self.entries if set(e.elements).issubset(elems)]
             cpd = ChemicalPotentialDiagram(
@@ -252,12 +256,17 @@ class ChemicalPotentialDiagram(MSONable):
         inds.extend([self._min_entries.index(el) for el in self.el_refs.values()])
 
         hyperplanes = data[inds]
-        hyperplanes[:, -1] = hyperplanes[:, -1] * -1
+        hyperplanes[:, -1] *= -1
         hyperplane_entries = [self._min_entries[idx] for idx in inds]
 
         return hyperplanes, hyperplane_entries
 
-    def _get_2d_plot(self, elements: list[Element], label_stable: bool | None, element_padding: float | None) -> Figure:
+    def _get_2d_plot(
+        self,
+        elements: list[Element],
+        label_stable: bool | None,
+        element_padding: float | None,
+    ) -> Figure:
         """Get a Plotly figure for a 2-dimensional chemical potential diagram."""
         domains = self.domains.copy()
         elem_indices = [self.elements.index(e) for e in elements]
@@ -670,11 +679,9 @@ def get_centroid_2d(vertices: np.ndarray) -> np.ndarray:
             circumferentially
 
     Returns:
-        np.array: Giving 2-d centroid coordinates.
+        np.ndarray: Giving 2-d centroid coordinates.
     """
-    cx = 0
-    cy = 0
-    a = 0
+    cx = cy = a = 0
 
     for idx in range(len(vertices) - 1):
         xi = vertices[idx, 0]

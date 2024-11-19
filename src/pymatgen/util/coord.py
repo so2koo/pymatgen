@@ -202,7 +202,7 @@ def pbc_shortest_vectors(lattice, frac_coords1, frac_coords2, mask=None, return_
         return_d2 (bool): whether to also return the squared distances
 
     Returns:
-        np.array: of displacement vectors from frac_coords1 to frac_coords2
+        np.ndarray: of displacement vectors from frac_coords1 to frac_coords2
             first index is frac_coords1 index, second is frac_coords2 index
     """
     return coord_cython.pbc_shortest_vectors(lattice, frac_coords1, frac_coords2, mask, return_d2)
@@ -285,7 +285,18 @@ def lattice_points_in_supercell(supercell_matrix):
     Returns:
         numpy array of the fractional coordinates
     """
-    diagonals = np.array([[0, 0, 0], [0, 0, 1], [0, 1, 0], [0, 1, 1], [1, 0, 0], [1, 0, 1], [1, 1, 0], [1, 1, 1]])
+    diagonals = np.array(
+        [
+            [0, 0, 0],
+            [0, 0, 1],
+            [0, 1, 0],
+            [0, 1, 1],
+            [1, 0, 0],
+            [1, 0, 1],
+            [1, 1, 0],
+            [1, 1, 1],
+        ]
+    )
     d_points = np.dot(diagonals, supercell_matrix)
 
     mins = np.min(d_points, axis=0)
@@ -301,7 +312,8 @@ def lattice_points_in_supercell(supercell_matrix):
     frac_points = np.dot(all_points, np.linalg.inv(supercell_matrix))
 
     t_vecs = frac_points[np.all(frac_points < 1 - 1e-10, axis=1) & np.all(frac_points >= -1e-10, axis=1)]
-    assert len(t_vecs) == round(abs(np.linalg.det(supercell_matrix)))
+    if len(t_vecs) != round(abs(np.linalg.det(supercell_matrix))):
+        raise ValueError("The number of transformed vectors mismatch.")
     return t_vecs
 
 
@@ -444,12 +456,13 @@ class Simplex(MSONable):
                 found = False
                 # don't return duplicate points
                 for b in barys:
-                    if np.all(np.abs(b - p) < tolerance):
+                    if np.allclose(b, p, atol=tolerance, rtol=0):
                         found = True
                         break
                 if not found:
                     barys.append(p)
-        assert len(barys) < 3, "More than 2 intersections found"
+        if len(barys) >= 3:
+            raise ValueError("More than 2 intersections found")
         return [self.point_from_bary_coords(b) for b in barys]
 
     def __eq__(self, other: object) -> bool:

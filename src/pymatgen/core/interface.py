@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 from monty.fractions import lcm
-from numpy.testing import assert_allclose
 from scipy.cluster.hierarchy import fcluster, linkage
 from scipy.spatial.distance import squareform
 
@@ -223,7 +222,7 @@ class GrainBoundary(Structure):
     @property
     def sigma(self) -> int:
         """The sigma value of the GB. If using 'quick_gen' to generate GB, this value is not valid."""
-        return int(round(self.oriented_unit_cell.volume / self.init_cell.volume))
+        return round(self.oriented_unit_cell.volume / self.init_cell.volume)
 
     @property
     def sigma_from_site_prop(self) -> int:
@@ -403,7 +402,7 @@ class GrainBoundaryGenerator:
         ratio: list[int] | None = None,
         plane: Tuple3Ints | None = None,
         max_search: int = 20,
-        tol_coi: float = 1.0e-8,
+        tol_coi: float = 1e-8,
         rm_ratio: float = 0.7,
         quick_gen: bool = False,
     ) -> GrainBoundary:
@@ -473,11 +472,11 @@ class GrainBoundaryGenerator:
             convention_cell = analyzer.get_conventional_standard_structure()
             vol_ratio = self.initial_structure.volume / convention_cell.volume
             # BCC primitive cell, belong to cubic system
-            if abs(vol_ratio - 0.5) < 1.0e-3:
+            if abs(vol_ratio - 0.5) < 1e-3:
                 trans_cry = np.array([[0.5, 0.5, -0.5], [-0.5, 0.5, 0.5], [0.5, -0.5, 0.5]])
                 logger.info("Make sure this is for cubic with bcc primitive cell")
             # FCC primitive cell, belong to cubic system
-            elif abs(vol_ratio - 0.25) < 1.0e-3:
+            elif abs(vol_ratio - 0.25) < 1e-3:
                 trans_cry = np.array([[0.5, 0.5, 0], [0, 0.5, 0.5], [0.5, 0, 0.5]])
                 logger.info("Make sure this is for cubic with fcc primitive cell")
             else:
@@ -577,7 +576,13 @@ class GrainBoundaryGenerator:
                     for idx in range(3):
                         if ratio[idx] is None:
                             ratio[idx] = 1
-                    metric = np.array([[1, 0, 0], [0, ratio[1] / ratio[2], 0], [0, 0, ratio[0] / ratio[2]]])
+                    metric = np.array(
+                        [
+                            [1, 0, 0],
+                            [0, ratio[1] / ratio[2], 0],
+                            [0, 0, ratio[0] / ratio[2]],
+                        ]
+                    )
                 else:
                     raise RuntimeError("Lattice type is not implemented.")
 
@@ -1000,7 +1005,8 @@ class GrainBoundaryGenerator:
                     c2_a2_ratio = 1.0 if ratio is None else ratio[0] / ratio[1]
                     metric = np.array([[1, 0, 0], [0, 1, 0], [0, 0, c2_a2_ratio]])
                 elif lat_type == "o":
-                    assert ratio is not None, "Invalid ratio for orthorhombic system"
+                    if ratio is None:
+                        raise ValueError(f"Invalid {ratio=} for orthorhombic system")
                     for idx in range(3):
                         if ratio is not None and ratio[idx] is None:
                             ratio[idx] = 1
@@ -1017,7 +1023,10 @@ class GrainBoundaryGenerator:
                 surface = np.matmul(r_axis, metric)
                 fractions = [Fraction(x).limit_denominator() for x in surface]
                 least_mul = reduce(lcm, [fraction.denominator for fraction in fractions])
-                surface = cast(Tuple3Ints | Tuple4Ints, tuple(round(x * least_mul) for x in surface))
+                surface = cast(
+                    Tuple3Ints | Tuple4Ints,
+                    tuple(round(x * least_mul) for x in surface),
+                )
 
         if reduce(math.gcd, surface) != 1:
             index = reduce(math.gcd, surface)
@@ -1040,7 +1049,7 @@ class GrainBoundaryGenerator:
                 mu = round(mu / temp)
                 mv = round(mv / temp)
             d = (u**2 + v**2 - u * v) * mv + w**2 * mu
-            if abs(angle - 180.0) < 1.0e0:
+            if abs(angle - 180.0) < 1:
                 m = 0
                 n = 1
             else:
@@ -1099,7 +1108,7 @@ class GrainBoundaryGenerator:
                 mu = round(mu / temp)
                 mv = round(mv / temp)
             d = (u**2 + v**2 + w**2) * (mu - 2 * mv) + 2 * mv * (v * w + w * u + u * v)
-            if abs(angle - 180.0) < 1.0e0:
+            if abs(angle - 180.0) < 1:
                 m = 0
                 n = 1
             else:
@@ -1160,9 +1169,7 @@ class GrainBoundaryGenerator:
             u, v, w = cast(Tuple3Ints, r_axis)
             mu = mv = None  # type: ignore[assignment]
             if lat_type == "c":
-                mu = 1
-                lam = 1
-                mv = 1
+                mu = lam = mv = 1
             elif lat_type == "t":
                 if ratio is None:
                     mu, mv = (1, 1)
@@ -1206,16 +1213,20 @@ class GrainBoundaryGenerator:
                         mv = 1
 
             # Make sure mu, lambda, mv are coprime integers
-            assert mu is not None
-            assert lam is not None
-            assert mv is not None
+            if mu is None:
+                raise ValueError("mu is None.")
+            if lam is None:
+                raise ValueError("lambda is None.")
+            if mv is None:
+                raise ValueError("mv is None.")
+
             if reduce(math.gcd, [mu, lam, mv]) != 1:
                 temp = cast(int, reduce(math.gcd, [mu, lam, mv]))
                 mu = round(mu / temp)
                 mv = round(mv / temp)
                 lam = round(lam / temp)
             d = (mv * u**2 + lam * v**2) * mv + w**2 * mu * mv
-            if abs(angle - 180.0) < 1.0e0:
+            if abs(angle - 180.0) < 1:
                 m = 0
                 n = 1
             else:
@@ -1256,7 +1267,8 @@ class GrainBoundaryGenerator:
             raise RuntimeError("Sigma >1000 too large. Are you sure what you are doing, Please check the GB if exist")
         # Transform surface, r_axis, r_matrix in terms of primitive lattice
         surface = np.matmul(surface, np.transpose(trans_cry))
-        assert surface is not None
+        if surface is None:
+            raise ValueError("surface is None.")
         fractions = [Fraction(x).limit_denominator() for x in surface]
         least_mul = reduce(lcm, [fraction.denominator for fraction in fractions])
         surface = cast(Tuple3Ints, tuple(round(x * least_mul) for x in surface))
@@ -1938,9 +1950,9 @@ class GrainBoundaryGenerator:
                 miller2 = GrainBoundaryGenerator.vec_to_surface(vec)
                 if np.all(np.abs(np.array(miller2)) <= plane_cutoff):
                     cos_1 = abs(np.dot(val, r_axis) / np.linalg.norm(val) / np.linalg.norm(r_axis))
-                    if 1 - cos_1 < 1.0e-5:
+                    if 1 - cos_1 < 1e-5:
                         all_combinations["Twist"].append([list(val), miller2])
-                    elif cos_1 < 1.0e-8:
+                    elif cos_1 < 1e-8:
                         sym_tilt = False
                         if np.sum(np.abs(val)) == np.sum(np.abs(miller2)):
                             ave = (np.array(val) + np.array(miller2)) / 2
@@ -1948,7 +1960,7 @@ class GrainBoundaryGenerator:
                             for plane in sym_plane:
                                 cos_2 = abs(np.dot(ave, plane) / np.linalg.norm(ave) / np.linalg.norm(plane))
                                 cos_3 = abs(np.dot(ave1, plane) / np.linalg.norm(ave1) / np.linalg.norm(plane))
-                                if 1 - cos_2 < 1.0e-5 or 1 - cos_3 < 1.0e-5:
+                                if 1 - cos_2 < 1e-5 or 1 - cos_3 < 1e-5:
                                     all_combinations["Symmetric tilt"].append([list(val), miller2])
                                     sym_tilt = True
                                     break
@@ -1998,8 +2010,8 @@ class GrainBoundaryGenerator:
         lat_type = lat_type.lower()
 
         # Check r_axis length
-        if lat_type in {"c", "t"}:
-            assert len(r_axis) == 3, "r_axis length incompatible with selected lattice system"
+        if lat_type in {"c", "t"} and len(r_axis) != 3:
+            raise ValueError(f"expect r_axis length 3 for selected lattice system, got {len(r_axis)}")
 
         # Check lattice axial ratio length
         if lat_type == "o" and (ratio is None or len(ratio) != 3):
@@ -2020,7 +2032,9 @@ class GrainBoundaryGenerator:
             if ratio is None:
                 logger.info("Make sure this is for irrational c2/a2 ratio")
             sigma_dict = GrainBoundaryGenerator.enum_sigma_tet(
-                cutoff=sigma, r_axis=cast(Tuple3Ints, r_axis), c2_a2_ratio=cast(tuple[int, int], ratio)
+                cutoff=sigma,
+                r_axis=cast(Tuple3Ints, r_axis),
+                c2_a2_ratio=cast(tuple[int, int], ratio),
             )
 
         elif lat_type == "o":
@@ -2044,7 +2058,9 @@ class GrainBoundaryGenerator:
             if ratio is None:
                 logger.info("Make sure this is for irrational (1+2*cos(alpha)/cos(alpha) ratio")
             sigma_dict = GrainBoundaryGenerator.enum_sigma_rho(
-                cutoff=sigma, r_axis=cast(Tuple3Ints, r_axis), ratio_alpha=cast(tuple[int, int], ratio)
+                cutoff=sigma,
+                r_axis=cast(Tuple3Ints, r_axis),
+                ratio_alpha=cast(tuple[int, int], ratio),
             )
 
         else:
@@ -2193,7 +2209,7 @@ class GrainBoundaryGenerator:
         for ii in combination:  # type: ignore[assignment]
             if reduce(math.gcd, ii) == 1:
                 temp = np.dot(np.array(ii), csl)
-                if abs(np.dot(temp, surface) - 0) < 1.0e-8:
+                if abs(np.dot(temp, surface)) < 1e-8:
                     ab_vector.append(temp)
                 else:
                     # c vector length along the direction perpendicular to surface
@@ -2202,7 +2218,7 @@ class GrainBoundaryGenerator:
                     c_norm_temp = np.linalg.norm(np.matmul(temp, trans))
                     if normal:
                         c_cross = np.cross(np.matmul(temp, trans), np.matmul(surface, ctrans))
-                        if np.linalg.norm(c_cross) < 1.0e-8:
+                        if np.linalg.norm(c_cross) < 1e-8:
                             if normal_init:
                                 if c_norm_temp < c_norm:
                                     t_matrix[2] = temp
@@ -2211,7 +2227,9 @@ class GrainBoundaryGenerator:
                                 c_norm = c_norm_temp
                                 normal_init = True
                                 t_matrix[2] = temp
-                    elif c_len_temp < c_length or (abs(c_len_temp - c_length) < 1.0e-8 and c_norm_temp < c_norm):
+                    elif c_len_temp < c_length or (
+                        math.isclose(c_len_temp, c_length, abs_tol=1e-8, rel_tol=0) and c_norm_temp < c_norm
+                    ):
                         t_matrix[2] = temp
                         c_norm = c_norm_temp
                         c_length = c_len_temp
@@ -2222,7 +2240,7 @@ class GrainBoundaryGenerator:
                 if max_j == max_search:
                     warnings.warn("Cannot find the perpendicular c vector, please increase max_search")
                     break
-                max_j = 3 * max_j
+                max_j *= 3
                 max_j = min(max_j, max_search)
                 jj = np.arange(0, max_j + 1)
                 combination = []
@@ -2242,9 +2260,9 @@ class GrainBoundaryGenerator:
                 for ii in combination:  # type: ignore[assignment]
                     if reduce(math.gcd, ii) == 1:
                         temp = np.dot(np.array(ii), csl)
-                        if abs(np.dot(temp, surface) - 0) > 1.0e-8:
+                        if abs(np.dot(temp, surface)) > 1e-8:
                             c_cross = np.cross(np.matmul(temp, trans), np.matmul(surface, ctrans))
-                            if np.linalg.norm(c_cross) < 1.0e-8:
+                            if np.linalg.norm(c_cross) < 1e-8:
                                 # c vector length itself
                                 c_norm_temp = np.linalg.norm(np.matmul(temp, trans))
                                 if normal_init:
@@ -2262,7 +2280,7 @@ class GrainBoundaryGenerator:
         ab_norm = None
         for ii in combinations(ab_vector, 2):
             area_temp = np.linalg.norm(np.cross(np.matmul(ii[0], trans), np.matmul(ii[1], trans)))
-            if abs(area_temp - 0) > 1.0e-8:
+            if abs(area_temp) > 1e-8:
                 ab_norm_temp = np.linalg.norm(np.matmul(ii[0], trans)) + np.linalg.norm(np.matmul(ii[1], trans))
                 if area is None:
                     area = area_temp
@@ -2270,7 +2288,9 @@ class GrainBoundaryGenerator:
                     t_matrix[0] = ii[0]
                     t_matrix[1] = ii[1]
 
-                elif area_temp < area or (abs(area - area_temp) < 1.0e-8 and ab_norm_temp < ab_norm):
+                elif area_temp < area or (
+                    math.isclose(area, area_temp, abs_tol=1e-8, rel_tol=0) and ab_norm_temp < ab_norm
+                ):
                     t_matrix[0] = ii[0]
                     t_matrix[1] = ii[1]
                     area = area_temp
@@ -2334,7 +2354,7 @@ class GrainBoundaryGenerator:
         miller: list[None | int] = [None] * 3
         index = []
         for idx, value in enumerate(vec):
-            if abs(value) < 1.0e-8:
+            if abs(value) < 1e-8:
                 miller[idx] = 0
             else:
                 index.append(idx)
@@ -2487,9 +2507,8 @@ class Interface(Structure):
             vacuum_over_film: vacuum space above the film in Angstroms. Defaults to 0.
             interface_properties: properties associated with the Interface. Defaults to None.
         """
-        assert (
-            "interface_label" in site_properties
-        ), "Must provide labeling of substrate and film sites in site properties"
+        if "interface_label" not in site_properties:
+            raise RuntimeError("Must provide labeling of substrate and film sites in site properties")
 
         self._in_plane_offset = np.array(in_plane_offset, dtype="float")
         self._gap = gap
@@ -2664,7 +2683,9 @@ class Interface(Structure):
     def film_layers(self) -> int:
         """Number of layers of the minimum element in the film composition."""
         sorted_element_list = sorted(
-            self.film.composition.element_composition.items(), key=lambda x: x[1], reverse=True
+            self.film.composition.element_composition.items(),
+            key=lambda x: x[1],
+            reverse=True,
         )
         return count_layers(self.film, sorted_element_list[0][0])
 
@@ -2672,7 +2693,9 @@ class Interface(Structure):
     def substrate_layers(self) -> int:
         """Number of layers of the minimum element in the substrate composition."""
         sorted_element_list = sorted(
-            self.substrate.composition.element_composition.items(), key=lambda x: x[1], reverse=True
+            self.substrate.composition.element_composition.items(),
+            key=lambda x: x[1],
+            reverse=True,
         )
         return count_layers(self.substrate, sorted_element_list[0][0])
 
@@ -2767,10 +2790,16 @@ class Interface(Structure):
             substrate_slab = substrate_slab.get_orthogonal_c_slab()
         if isinstance(film_slab, Slab):
             film_slab = film_slab.get_orthogonal_c_slab()
-        assert_allclose(film_slab.lattice.alpha, 90, 0.1)
-        assert_allclose(film_slab.lattice.beta, 90, 0.1)
-        assert_allclose(substrate_slab.lattice.alpha, 90, 0.1)
-        assert_allclose(substrate_slab.lattice.beta, 90, 0.1)
+
+        if not math.isclose(film_slab.lattice.alpha, 90, rel_tol=0.1) or not math.isclose(
+            film_slab.lattice.beta, 90, rel_tol=0.1
+        ):
+            raise ValueError("The lattice angles alpha or beta of the film slab are not approximately 90 degrees.")
+
+        if not math.isclose(substrate_slab.lattice.alpha, 90, rel_tol=0.1) or not math.isclose(
+            substrate_slab.lattice.beta, 90, rel_tol=0.1
+        ):
+            raise ValueError("The lattice angles alpha or beta of the substrate slab are not approximately 90 degrees.")
 
         # Ensure sub is right-handed
         # IE sub has surface facing "up"
@@ -2821,7 +2850,10 @@ class Interface(Structure):
         site_props_in_both = set(substrate_slab.site_properties) & set(film_slab.site_properties)
 
         for key in site_props_in_both:
-            site_properties[key] = [*substrate_slab.site_properties[key], *film_slab.site_properties[key]]
+            site_properties[key] = [
+                *substrate_slab.site_properties[key],
+                *film_slab.site_properties[key],
+            ]
 
         site_properties["interface_label"] = ["substrate"] * len(substrate_slab) + ["film"] * len(film_slab)
 
@@ -2843,8 +2875,14 @@ class Interface(Structure):
         return iface
 
 
-def label_termination(slab: Structure) -> str:
-    """Label the slab surface termination."""
+def label_termination(slab: Structure, ftol: float = 0.25, t_idx: int | None = None) -> str:
+    """Label the slab surface termination.
+
+    Args:
+        slab (Slab): film or substrate slab to label termination for
+        ftol (float): tolerance for terminating position hierarchical clustering
+        t_idx (None | int): if not None, adding an extra index to the termination label output
+    """
     frac_coords = slab.frac_coords
     n = len(frac_coords)
 
@@ -2867,7 +2905,7 @@ def label_termination(slab: Structure) -> str:
 
     condensed_m = squareform(dist_matrix)
     z = linkage(condensed_m)
-    clusters = fcluster(z, 0.25, criterion="distance")
+    clusters = fcluster(z, ftol, criterion="distance")
 
     clustered_sites: dict[int, list[Site]] = {c: [] for c in clusters}
     for idx, cluster in enumerate(clusters):
@@ -2880,7 +2918,11 @@ def label_termination(slab: Structure) -> str:
 
     sp_symbol = SpacegroupAnalyzer(top_plane, symprec=0.1).get_space_group_symbol()
     form = top_plane.reduced_formula
-    return f"{form}_{sp_symbol}_{len(top_plane)}"
+
+    if t_idx is None:
+        return f"{form}_{sp_symbol}_{len(top_plane)}"
+
+    return f"{t_idx}_{form}_{sp_symbol}_{len(top_plane)}"
 
 
 def count_layers(struct: Structure, el: Element | None = None) -> int:

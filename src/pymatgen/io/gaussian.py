@@ -23,6 +23,8 @@ if TYPE_CHECKING:
 
     from typing_extensions import Self
 
+    from pymatgen.util.typing import PathLike
+
 __author__ = "Shyue Ping Ong, Germain Salvato-Vallverdu, Xin Chen"
 __copyright__ = "Copyright 2013, The Materials Virtual Lab"
 __version__ = "0.1"
@@ -294,7 +296,8 @@ class GaussianInput:
         for line in lines:
             if link0_patt.match(line):
                 match = link0_patt.match(line)
-                assert match is not None
+                if match is None:
+                    raise ValueError("no match found")
                 link0_dict[match[1].strip("=")] = match[2]
 
         route_patt = re.compile(r"^#[sSpPnN]*.*")
@@ -305,15 +308,16 @@ class GaussianInput:
                 route += f" {line}"
                 route_index = idx
             # This condition allows for route cards spanning multiple lines
-            elif (line == "" or line.isspace()) and route_index:
+            elif (line == "" or line.isspace()) and route_index is not None:
                 break
-            if route_index:
+            if route_index is not None:
                 route += f" {line}"
                 route_index = idx
         functional, basis_set, route_paras, dieze_tag = read_route_line(route)
         ind = 2
         title = []
-        assert route_index is not None, "route_index cannot be None"
+        if route_index is None:
+            raise ValueError("route_index cannot be None")
         while lines[route_index + ind].strip():
             title.append(lines[route_index + ind].strip())
             ind += 1
@@ -416,7 +420,12 @@ class GaussianInput:
             # don't use the slash if either or both are set as empty
             func_bset_str = f" {func_str}{bset_str}".rstrip()
 
-        output += (f"{self.dieze_tag}{func_bset_str} {para_dict_to_str(self.route_parameters)}", "", self.title, "")
+        output += (
+            f"{self.dieze_tag}{func_bset_str} {para_dict_to_str(self.route_parameters)}",
+            "",
+            self.title,
+            "",
+        )
 
         charge_str = "" if self.charge is None else f"{self.charge:.0f}"
         multip_str = "" if self.spin_multiplicity is None else f" {self.spin_multiplicity:.0f}"
@@ -569,13 +578,13 @@ class GaussianOutput:
             Save a matplotlib plot of the potential energy surface to a file
     """
 
-    def __init__(self, filename):
+    def __init__(self, filename: PathLike) -> None:
         """
         Args:
             filename: Filename of Gaussian output file.
         """
-        self.filename = filename
-        self._parse(filename)
+        self.filename = str(filename)
+        self._parse(self.filename)
 
     @property
     def final_energy(self):
@@ -625,40 +634,27 @@ class GaussianOutput:
 
         bond_order_patt = re.compile(r"Wiberg bond index matrix in the NAO basis:")
 
-        self.properly_terminated = False
-        self.is_pcm = False
+        self.properly_terminated = self.is_pcm = self.is_spin = False
+        self.pcm = self.hessian = self.title = None
         self.stationary_type = "Minimum"
         self.corrections = {}
         self.energies = []
-        self.pcm = None
         self.errors = []
         self.Mulliken_charges = {}
         self.link0 = {}
         self.cart_forces = []
         self.frequencies = []
         self.eigenvalues = []
-        self.is_spin = False
-        self.hessian = None
         self.resumes = []
-        self.title = None
         self.bond_orders = {}
 
-        read_coord = 0
-        read_mulliken = False
-        read_eigen = False
+        read_mulliken = read_eigen = num_basis_found = terminated = parse_forces = False
+        read_mo = parse_hessian = standard_orientation = parse_bond_order = parse_freq = False
+        read_coord = parse_stage = 0
         eigen_txt = []
-        parse_stage = 0
-        num_basis_found = False
-        terminated = False
-        parse_forces = False
         forces = []
-        parse_freq = False
         frequencies = []
-        read_mo = False
-        parse_hessian = False
         route_line = ""
-        standard_orientation = False
-        parse_bond_order = False
         input_structures = []
         std_structures = []
         geom_orientation = None

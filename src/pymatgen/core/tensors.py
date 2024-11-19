@@ -212,7 +212,12 @@ class Tensor(np.ndarray, MSONable):
         remaining = [i for i in remaining if i not in grouped[0]]
         # Iteratively run through remaining indices
         while remaining:
-            new = list(zip(*np.where(np.isclose(array, array[remaining[0]], **kwargs)), strict=True))
+            new = list(
+                zip(
+                    *np.where(np.isclose(array, array[remaining[0]], **kwargs)),
+                    strict=True,
+                )
+            )
             grouped.append(new)
             remaining = [i for i in remaining if i not in new]
         # Don't return any empty lists
@@ -301,7 +306,7 @@ class Tensor(np.ndarray, MSONable):
         Args:
             tol (float): tolerance to test for symmetry
         """
-        return (self - self.symmetrized < tol).all()
+        return np.allclose(self, self.symmetrized, atol=tol, rtol=0)
 
     def fit_to_structure(
         self,
@@ -331,7 +336,7 @@ class Tensor(np.ndarray, MSONable):
             structure (Structure): structure to be fit to
             tol (float): tolerance for symmetry testing
         """
-        return (self - self.fit_to_structure(structure) < tol).all()
+        return np.allclose(self, self.fit_to_structure(structure), atol=tol, rtol=0)
 
     @property
     def voigt(self) -> NDArray:
@@ -391,7 +396,7 @@ class Tensor(np.ndarray, MSONable):
         t = cls(np.zeros([3] * rank))
         if voigt_input.shape != t._vscale.shape:
             raise ValueError("Invalid shape for Voigt matrix")
-        voigt_input = voigt_input / t._vscale
+        voigt_input = voigt_input / t._vscale  # (ruff-preview) noqa: PLR6104
         this_voigt_map = t.get_voigt_dict(rank)
         for ind, v in this_voigt_map.items():
             t[ind] = voigt_input[v]
@@ -577,7 +582,8 @@ class Tensor(np.ndarray, MSONable):
         obj = cls.from_voigt(base) if 6 in shape else cls(base)
 
         if populate:
-            assert structure, "Populate option must include structure input"
+            if not structure:
+                raise ValueError("Populate option must include structure input")
             obj = obj.populate(structure, vsym=vsym, verbose=verbose)
         elif structure:
             obj = obj.fit_to_structure(structure)
@@ -648,7 +654,8 @@ class Tensor(np.ndarray, MSONable):
                     merge(v, vtrans)
                 guess = type(self).from_voigt(v)
 
-        assert guess.shape == self.shape, "Guess must have same shape"
+        if guess.shape != self.shape:
+            raise ValueError("Guess must have same shape")
         converged = False
         test_new, test_old = [guess.copy()] * 2
         for idx in range(maxiter):
@@ -966,7 +973,7 @@ class SquareTensor(Tensor):
         det = np.abs(np.linalg.det(self))
         if include_improper:
             det = np.abs(det)
-        return (np.abs(self.inv - self.trans) < tol).all() and (np.abs(det - 1.0) < tol)
+        return np.allclose(self.inv, self.trans, atol=tol, rtol=0) and np.allclose(det, 1.0, atol=tol, rtol=0)
 
     def refine_rotation(self) -> Self:
         """Helper method for refining rotation matrix by ensuring

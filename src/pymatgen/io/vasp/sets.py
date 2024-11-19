@@ -49,7 +49,7 @@ from monty.serialization import loadfn
 from pymatgen.analysis.structure_matcher import StructureMatcher
 from pymatgen.core import Element, PeriodicSite, SiteCollection, Species, Structure
 from pymatgen.io.core import InputGenerator
-from pymatgen.io.vasp.inputs import Incar, Kpoints, PMG_VASP_PSP_DIR_Error, Poscar, Potcar, VaspInput
+from pymatgen.io.vasp.inputs import Incar, Kpoints, PmgVaspPspDirError, Poscar, Potcar, VaspInput
 from pymatgen.io.vasp.outputs import Outcar, Vasprun
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.symmetry.bandstructure import HighSymmKpath
@@ -65,7 +65,19 @@ if TYPE_CHECKING:
     from pymatgen.util.typing import PathLike, Tuple3Ints, Vector3D
 
     UserPotcarFunctional = (
-        Literal["PBE", "PBE_52", "PBE_54", "PBE_64", "LDA", "LDA_52", "LDA_54", "PW91", "LDA_US", "PW91_US"] | None
+        Literal[
+            "PBE",
+            "PBE_52",
+            "PBE_54",
+            "PBE_64",
+            "LDA",
+            "LDA_52",
+            "LDA_54",
+            "PW91",
+            "LDA_US",
+            "PW91_US",
+        ]
+        | None
     )
 
 MODULE_DIR = os.path.dirname(__file__)
@@ -275,7 +287,7 @@ class VaspInputSet(InputGenerator, abc.ABC):
         if self.user_potcar_functional != self._config_dict.get("POTCAR_FUNCTIONAL", "PBE"):
             warnings.warn(
                 "Overriding the POTCAR functional is generally not recommended "
-                " as it significantly affect the results of calculations and "
+                " as it significantly affects the results of calculations and "
                 "compatibility with other calculations done with the same "
                 "input set. Note that some POTCAR symbols specified in "
                 "the configuration file may not be available in the selected "
@@ -286,7 +298,7 @@ class VaspInputSet(InputGenerator, abc.ABC):
         if self.user_potcar_settings:
             warnings.warn(
                 "Overriding POTCARs is generally not recommended as it "
-                "significantly affect the results of calculations and "
+                "significantly affects the results of calculations and "
                 "compatibility with other calculations done with the same "
                 "input set. In many instances, it is better to write a "
                 "subclass of a desired input set and override the POTCAR in "
@@ -299,6 +311,7 @@ class VaspInputSet(InputGenerator, abc.ABC):
         if not isinstance(self.structure, Structure):
             self._structure: Structure | None = None
         else:
+            # TODO is this needed? should it be self._structure = self.structure (needs explanation either way)
             self.structure = self.structure
 
         if isinstance(self.prev_incar, Path | str):
@@ -342,15 +355,18 @@ class VaspInputSet(InputGenerator, abc.ABC):
             zip_output (bool): If True, output will be zipped into a file with the
                 same name as the InputSet (e.g., MPStaticSet.zip).
         """
+        vasp_input = None
         try:
             vasp_input = self.get_input_set(potcar_spec=potcar_spec)
-        except PMG_VASP_PSP_DIR_Error:
-            assert potcar_spec is False
-            raise ValueError(
-                "PMG_VASP_PSP_DIR is not set."
-                "  Please set the PMG_VASP_PSP_DIR in .pmgrc.yaml"
-                " or use potcar_spec=True argument."
-            )
+        except PmgVaspPspDirError:
+            if not potcar_spec:
+                raise PmgVaspPspDirError(
+                    "PMG_VASP_PSP_DIR is not set. Please set PMG_VASP_PSP_DIR"
+                    " in .pmgrc.yaml or use potcar_spec=True argument."
+                ) from None
+
+        if vasp_input is None:
+            raise ValueError("vasp_input is None")
 
         cif_name = None
         if include_cif:
@@ -393,7 +409,10 @@ class VaspInputSet(InputGenerator, abc.ABC):
         if isinstance(structure, SiteCollection):  # could be Structure or Molecule
             if self.user_potcar_functional == "PBE_54" and "W" in structure.symbol_set:
                 # When using 5.4 POTCARs, default Tungsten POTCAR to W_Sv but still allow user to override
-                self.user_potcar_settings = {"W": "W_sv", **(self.user_potcar_settings or {})}
+                self.user_potcar_settings = {
+                    "W": "W_sv",
+                    **(self.user_potcar_settings or {}),
+                }
             if self.reduce_structure:
                 structure = structure.get_reduced_structure(self.reduce_structure)
             if self.sort_structure:
@@ -585,7 +604,7 @@ class VaspInputSet(InputGenerator, abc.ABC):
                         # Else, use fallback LDAU value if it exists
                     else:
                         incar[key] = [
-                            setting.get(sym, 0) if isinstance(setting.get(sym, 0), float | int) else 0
+                            (setting.get(sym, 0) if isinstance(setting.get(sym, 0), float | int) else 0)
                             for sym in poscar.site_symbols
                         ]
 
@@ -630,7 +649,10 @@ class VaspInputSet(InputGenerator, abc.ABC):
             or incar.get("LDAU", False)
             or incar.get("LUSE_VDW", False)
         ):
-            warnings.warn("LASPH = True should be set for +U, meta-GGAs, hybrids, and vdW-DFT", BadInputSetWarning)
+            warnings.warn(
+                "LASPH = True should be set for +U, meta-GGAs, hybrids, and vdW-DFT",
+                BadInputSetWarning,
+            )
 
         # Apply previous INCAR settings, be careful not to override user_incar_settings
         # or the settings updates from the specific input set implementations
@@ -649,7 +671,7 @@ class VaspInputSet(InputGenerator, abc.ABC):
                     "better off changing the values of MAGMOM or simply setting "
                     "NUPDOWN directly in your INCAR settings.",
                     UserWarning,
-                    stacklevel=1,
+                    stacklevel=2,
                 )
             auto_updates["NUPDOWN"] = nupdown
 
@@ -657,7 +679,11 @@ class VaspInputSet(InputGenerator, abc.ABC):
             auto_updates["NELECT"] = self.nelect
 
         # Check that ALGO is appropriate
-        if incar.get("LHFCALC", False) is True and incar.get("ALGO", "Normal") not in ["Normal", "All", "Damped"]:
+        if incar.get("LHFCALC", False) is True and incar.get("ALGO", "Normal") not in [
+            "Normal",
+            "All",
+            "Damped",
+        ]:
             warnings.warn(
                 "Hybrid functionals only support Algo = All, Damped, or Normal.",
                 BadInputSetWarning,
@@ -871,7 +897,9 @@ class VaspInputSet(InputGenerator, abc.ABC):
             )
         elif kconfig.get("zero_weighted_reciprocal_density"):
             zero_weighted_kpoints = Kpoints.automatic_density_by_vol(
-                self.structure, kconfig["zero_weighted_reciprocal_density"], self.force_gamma
+                self.structure,
+                kconfig["zero_weighted_reciprocal_density"],
+                self.force_gamma,
             )
             sga = SpacegroupAnalyzer(self.structure, symprec=self.sym_prec)
             mesh = sga.get_ir_reciprocal_mesh(zero_weighted_kpoints.kpts[0])
@@ -984,7 +1012,7 @@ class VaspInputSet(InputGenerator, abc.ABC):
         n_bands = max(possible_val_1, possible_val_2) + n_mag
 
         if self.incar.get("LNONCOLLINEAR") is True:
-            n_bands = n_bands * 2
+            n_bands *= 2
 
         if n_par := self.incar.get("NPAR"):
             n_bands = (np.floor((n_bands + n_par - 1) / n_par)) * n_par
@@ -1411,12 +1439,24 @@ class MPStaticSet(VaspInputSet):
     @property
     def incar_updates(self) -> dict:
         """Updates to the INCAR config for this calculation type."""
-        updates: dict[str, Any] = {"NSW": 0, "ISMEAR": -5, "LCHARG": True, "LORBIT": 11, "LREAL": False}
+        updates: dict[str, Any] = {
+            "NSW": 0,
+            "ISMEAR": -5,
+            "LCHARG": True,
+            "LORBIT": 11,
+            "LREAL": False,
+        }
         if self.lepsilon:
             # LPEAD=T: numerical evaluation of overlap integral prevents LRF_COMMUTATOR
             # errors and can lead to better expt. agreement but produces slightly
             # different results
-            updates |= {"IBRION": 8, "LEPSILON": True, "LPEAD": True, "NSW": 1, "EDIFF": 1e-5}
+            updates |= {
+                "IBRION": 8,
+                "LEPSILON": True,
+                "LPEAD": True,
+                "NSW": 1,
+                "EDIFF": 1e-5,
+            }
 
         if self.lcalcpol:
             updates["LCALCPOL"] = True
@@ -1513,7 +1553,8 @@ class MatPESStaticSet(VaspInputSet):
         self.user_potcar_functional = self.user_potcar_functional or default_potcars
         if self.user_potcar_functional.upper() != default_potcars:
             warnings.warn(
-                f"{self.user_potcar_functional=} is inconsistent with the recommended {default_potcars}.", UserWarning
+                f"{self.user_potcar_functional=} is inconsistent with the recommended {default_potcars}.",
+                UserWarning,
             )
 
         if self.xc_functional.upper() == "R2SCAN":
@@ -1558,7 +1599,13 @@ class MPScanStaticSet(MPScanRelaxSet):
             # LPEAD=T: numerical evaluation of overlap integral prevents
             # LRF_COMMUTATOR errors and can lead to better expt. agreement
             # but produces slightly different results
-            updates |= {"IBRION": 8, "LEPSILON": True, "LPEAD": True, "NSW": 1, "NPAR": None}
+            updates |= {
+                "IBRION": 8,
+                "LEPSILON": True,
+                "LPEAD": True,
+                "NSW": 1,
+                "NPAR": None,
+            }
 
         if self.lcalcpol:
             updates["LCALCPOL"] = True
@@ -1633,7 +1680,10 @@ class MPHSEBSSet(VaspInputSet):
     @property
     def kpoints_updates(self) -> dict[str, Any]:
         """Updates to the kpoints configuration for this calculation type."""
-        kpoints: dict[str, Any] = {"reciprocal_density": self.reciprocal_density, "explicit": True}
+        kpoints: dict[str, Any] = {
+            "reciprocal_density": self.reciprocal_density,
+            "explicit": True,
+        }
 
         if self.mode == "line":
             # add line_density on top of reciprocal density
@@ -1753,7 +1803,14 @@ class MPNonSCFSet(VaspInputSet):
     @property
     def incar_updates(self) -> dict[str, Any]:
         """Updates to the INCAR config for this calculation type."""
-        updates: dict[str, Any] = {"LCHARG": False, "LORBIT": 11, "LWAVE": False, "NSW": 0, "ISYM": 0, "ICHARG": 11}
+        updates: dict[str, Any] = {
+            "LCHARG": False,
+            "LORBIT": 11,
+            "LWAVE": False,
+            "NSW": 0,
+            "ISYM": 0,
+            "ICHARG": 11,
+        }
 
         if self.prev_vasprun is not None:
             # Set NBANDS
@@ -1797,7 +1854,10 @@ class MPNonSCFSet(VaspInputSet):
             return {"line_density": self.kpoints_line_density * factor}
 
         if self.mode == "boltztrap":
-            return {"explicit": True, "reciprocal_density": self.reciprocal_density * factor}
+            return {
+                "explicit": True,
+                "reciprocal_density": self.reciprocal_density * factor,
+            }
 
         return {"reciprocal_density": self.reciprocal_density * factor}
 
@@ -1900,7 +1960,8 @@ class MPSOCSet(VaspInputSet):
                 # Project MAGMOM to z-axis
                 structure = structure.copy(site_properties={"magmom": [[0, 0, site.magmom] for site in structure]})
 
-        assert VaspInputSet.structure is not None
+        if VaspInputSet.structure is None:
+            raise ValueError("structure is None")
         VaspInputSet.structure.fset(self, structure)
 
 
@@ -1938,11 +1999,17 @@ class MPNMRSet(VaspInputSet):
     @property
     def incar_updates(self) -> dict[str, Any]:
         """Updates to the INCAR config for this calculation type."""
-        updates: dict[str, Any] = {"NSW": 0, "ISMEAR": -5, "LCHARG": True, "LORBIT": 11, "LREAL": False}
+        updates: dict[str, Any] = {
+            "NSW": 0,
+            "ISMEAR": -5,
+            "LCHARG": True,
+            "LORBIT": 11,
+            "LREAL": False,
+        }
         if self.mode.lower() == "cs":
             updates.update(
                 LCHIMAG=True,
-                EDIFF=-1.0e-10,
+                EDIFF=-1e-10,
                 ISYM=0,
                 LCHARG=False,
                 LNMR_SYM_RED=True,
@@ -1952,14 +2019,14 @@ class MPNMRSet(VaspInputSet):
                 SIGMA=0.01,
             )
         elif self.mode.lower() == "efg" and self.structure is not None:
-            isotopes = {ist.split("-")[0]: ist for ist in self.isotopes}
+            isotopes = {isotope.split("-")[0]: isotope for isotope in self.isotopes}
             quad_efg = [
                 float(Species(sp.name).get_nmr_quadrupole_moment(isotopes.get(sp.name)))
                 for sp in self.structure.species
             ]
             updates.update(
                 ALGO="FAST",
-                EDIFF=-1.0e-10,
+                EDIFF=-1e-10,
                 ISYM=0,
                 LCHARG=False,
                 LEFG=True,
@@ -2156,7 +2223,14 @@ class MVLSlabSet(VaspInputSet):
     @property
     def incar_updates(self) -> dict[str, Any]:
         """Updates to the INCAR config for this calculation type."""
-        updates = {"EDIFF": 1e-4, "EDIFFG": -0.02, "ENCUT": 400, "ISMEAR": 0, "SIGMA": 0.05, "ISIF": 3}
+        updates = {
+            "EDIFF": 1e-4,
+            "EDIFFG": -0.02,
+            "ENCUT": 400,
+            "ISMEAR": 0,
+            "SIGMA": 0.05,
+            "ISIF": 3,
+        }
         if not self.bulk:
             updates |= {"ISIF": 2, "LVTOT": True, "NELMIN": 8}
             if self.set_mix:
@@ -2180,7 +2254,8 @@ class MVLSlabSet(VaspInputSet):
         # attributes aren't going to affect the VASP inputs anyways so
         # converting the slab into a structure should not matter
         # use k_product to calculate kpoints, k_product = kpts[0][0] * a
-        assert self.structure is not None
+        if self.structure is None:
+            raise ValueError("structure is None")
         lattice_abc = self.structure.lattice.abc
         kpt_calc = [
             int(self.k_product / lattice_abc[0] + 0.5),
@@ -2263,7 +2338,15 @@ class MVLGBSet(VaspInputSet):
         """Updates to the INCAR config for this calculation type."""
         # The default incar setting is used for metallic system, for
         # insulator or semiconductor, ISMEAR need to be changed.
-        updates = dict(LCHARG=False, NELM=60, PREC="Normal", EDIFFG=-0.02, ICHARG=0, NSW=200, EDIFF=0.0001)
+        updates = dict(
+            LCHARG=False,
+            NELM=60,
+            PREC="Normal",
+            EDIFFG=-0.02,
+            ICHARG=0,
+            NSW=200,
+            EDIFF=0.0001,
+        )
 
         if self.is_metal:
             updates["ISMEAR"] = 1
@@ -2331,7 +2414,13 @@ class MITNEBSet(VaspInputSet):
             self._config_dict["INCAR"]["EDIFF"] = self._config_dict["INCAR"].pop("EDIFF_PER_ATOM")
 
         # NEB specific defaults
-        defaults = {"IMAGES": len(structures) - 2, "IBRION": 1, "ISYM": 0, "LCHARG": False, "LDAU": False}
+        defaults = {
+            "IMAGES": len(structures) - 2,
+            "IBRION": 1,
+            "ISYM": 0,
+            "LCHARG": False,
+            "LDAU": False,
+        }
         self._config_dict["INCAR"].update(defaults)
 
     @property
@@ -2384,7 +2473,8 @@ class MITNEBSet(VaspInputSet):
         if make_dir_if_not_present and not output_dir.exists():
             output_dir.mkdir(parents=True)
         self.incar.write_file(str(output_dir / "INCAR"))
-        assert self.kpoints is not None
+        if self.kpoints is None:
+            raise ValueError("kpoints is None")
         self.kpoints.write_file(str(output_dir / "KPOINTS"))
         self.potcar.write_file(str(output_dir / "POTCAR"))
 
@@ -2400,7 +2490,8 @@ class MITNEBSet(VaspInputSet):
 
             for image in ("00", str(len(self.structures) - 1).zfill(2)):
                 end_point_param.incar.write_file(str(output_dir / image / "INCAR"))
-                assert end_point_param.kpoints is not None
+                if end_point_param.kpoints is None:
+                    raise ValueError("kpoints of end_point_param is None")
                 end_point_param.kpoints.write_file(str(output_dir / image / "KPOINTS"))
                 end_point_param.potcar.write_file(str(output_dir / image / "POTCAR"))
         if write_path_cif:
@@ -2580,11 +2671,12 @@ class MVLNPTMDSet(VaspInputSet):
     def incar_updates(self) -> dict[str, Any]:
         """Updates to the INCAR config for this calculation type."""
         # NPT-AIMD default settings
-        assert self.structure is not None
+        if self.structure is None:
+            raise ValueError("structure is None")
         updates = {
             "ALGO": "Fast",
             "ISIF": 3,
-            "LANGEVIN_GAMMA": [10] * self.structure.ntypesp,
+            "LANGEVIN_GAMMA": [10] * self.structure.n_elems,
             "LANGEVIN_GAMMA_L": 1,
             "MDALGO": 3,
             "PMASS": 10,
@@ -2615,7 +2707,7 @@ class MVLNPTMDSet(VaspInputSet):
             "LDAU": False,
         }
         # Set NPT-AIMD ENCUT = 1.5 * VASP_default
-        enmax = [self.potcar[i].keywords["ENMAX"] for i in range(self.structure.ntypesp)]
+        enmax = [self.potcar[i].keywords["ENMAX"] for i in range(self.structure.n_elems)]
         updates["ENCUT"] = max(enmax) * 1.5
         return updates
 
@@ -3081,7 +3173,7 @@ class MPAbsorptionSet(VaspInputSet):
         """Updates to the INCAR config for this calculation type."""
         updates = {
             "ALGO": "Exact",
-            "EDIFF": 1.0e-8,
+            "EDIFF": 1e-8,
             "IBRION": -1,
             "ICHARG": 1,
             "ISMEAR": 0,
@@ -3098,7 +3190,14 @@ class MPAbsorptionSet(VaspInputSet):
         if self.mode == "RPA":
             # Default parameters for the response function calculation. NELM has to be
             # set to 1. NOMEGA is set to 1000 in order to get smooth spectrum
-            updates |= {"ALGO": "CHI", "NELM": 1, "NOMEGA": 1000, "EDIFF": None, "LOPTICS": None, "LWAVE": None}
+            updates |= {
+                "ALGO": "CHI",
+                "NELM": 1,
+                "NOMEGA": 1000,
+                "EDIFF": None,
+                "LOPTICS": None,
+                "LWAVE": None,
+            }
 
         if self.prev_vasprun is not None and self.mode == "IPA":
             prev_nbands = int(self.prev_vasprun.parameters["NBANDS"]) if self.nbands is None else self.nbands
@@ -3114,7 +3213,11 @@ class MPAbsorptionSet(VaspInputSet):
             self.nkred = (
                 cast(tuple[int, int, int], self.prev_vasprun.kpoints.kpts[0]) if self.nkred is None else self.nkred
             )
-            updates |= {"NKREDX": self.nkred[0], "NKREDY": self.nkred[1], "NKREDZ": self.nkred[2]}
+            updates |= {
+                "NKREDX": self.nkred[0],
+                "NKREDY": self.nkred[1],
+                "NKREDZ": self.nkred[2],
+            }
 
         return updates
 

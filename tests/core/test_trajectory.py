@@ -31,7 +31,10 @@ class TestTrajectory(PymatgenTest):
         self.molecules = []
         for coord in coords:
             mol = Molecule(
-                species, coord, charge=int(last_mol.charge), spin_multiplicity=int(last_mol.spin_multiplicity)
+                species,
+                coord,
+                charge=int(last_mol.charge),
+                spin_multiplicity=int(last_mol.spin_multiplicity),
             )
             self.molecules += [mol]
 
@@ -123,12 +126,12 @@ class TestTrajectory(PymatgenTest):
         self.traj.to_displacements()
         self.traj.to_positions()
 
-        assert all(struct == self.structures[i] for i, struct in enumerate(self.traj))
+        assert all(struct == self.structures[idx] for idx, struct in enumerate(self.traj))
 
         self.traj_mols.to_displacements()
         self.traj_mols.to_positions()
 
-        assert all(mol == self.molecules[i] for i, mol in enumerate(self.traj_mols))
+        assert all(mol == self.molecules[idx] for idx, mol in enumerate(self.traj_mols))
 
     def test_site_properties(self):
         lattice, species, coords = self._get_lattice_species_and_coords()
@@ -448,7 +451,9 @@ class TestTrajectory(PymatgenTest):
         traj = Trajectory.from_structures(structures, constant_lattice=False)
 
         # Check if lattices were properly stored
-        assert all(np.allclose(struct.lattice.matrix, structures[i].lattice.matrix) for i, struct in enumerate(traj))
+        assert all(
+            np.allclose(struct.lattice.matrix, structures[idx].lattice.matrix) for idx, struct in enumerate(traj)
+        )
 
         # Check if the file is written correctly when lattice is not constant.
         traj.write_Xdatcar(filename=f"{self.tmp_path}/traj_test_XDATCAR")
@@ -484,14 +489,18 @@ class TestTrajectory(PymatgenTest):
             # Check composition of the first frame of the trajectory
             assert traj[0].formula == "Li2 Mn2 O4"
         except ImportError:
-            with pytest.raises(ImportError, match="ASE is required to read .traj files. pip install ase"):
+            with pytest.raises(
+                ImportError,
+                match="ASE is required to read .traj files. pip install ase",
+            ):
                 Trajectory.from_file(f"{TEST_DIR}/LiMnO2_chgnet_relax.traj")
 
     def test_index_error(self):
         with pytest.raises(IndexError, match="index=100 out of range, trajectory only has 100 frames"):
             self.traj[100]
         with pytest.raises(
-            TypeError, match=re.escape("bad index='test', expected one of [int, slice, list[int], numpy.ndarray]")
+            TypeError,
+            match=re.escape("bad index='test', expected one of [int, slice, list[int], numpy.ndarray]"),
         ):
             self.traj["test"]
 
@@ -506,7 +515,10 @@ class TestTrajectory(PymatgenTest):
         ]
 
         # Problematic Inputs
-        short_lattice = [((1, 0, 0), (0, 1, 0), (0, 0, 1)), ((1, 0, 0), (0, 1, 0), (0, 0, 1))]
+        short_lattice = [
+            ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+            ((1, 0, 0), (0, 1, 0), (0, 0, 1)),
+        ]
         unphysical_lattice = [
             ((1, 0, 0), (0, 1, 0)),
             ((1, 0, 0), (0, 1, 0)),

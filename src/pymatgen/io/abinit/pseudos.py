@@ -92,12 +92,11 @@ class Pseudo(MSONable, abc.ABC):
     """
 
     @classmethod
-    def as_pseudo(cls, obj):
-        """
-        Convert obj into a pseudo. Accepts:
+    def as_pseudo(cls, obj: Self | str) -> Self:
+        """Convert obj into a Pseudo.
 
-            * Pseudo object.
-            * string defining a valid path.
+        Args:
+            obj (str | Pseudo): Path to the pseudo file or a Pseudo object.
         """
         return obj if isinstance(obj, cls) else cls.from_file(obj)
 
@@ -227,7 +226,7 @@ class Pseudo(MSONable, abc.ABC):
             text = file.read()
             # usedforsecurity=False needed in FIPS mode (Federal Information Processing Standards)
             # https://github.com/materialsproject/pymatgen/issues/2804
-            md5 = hashlib.new("md5", usedforsecurity=False)  # hashlib.md5(usedforsecurity=False) is py39+
+            md5 = hashlib.md5(usedforsecurity=False)
             md5.update(text.encode("utf-8"))
             return md5.hexdigest()
 
@@ -1220,7 +1219,8 @@ class PawXmlSetup(Pseudo, PawPseudo):
         self.valence_states: dict = {}
         for node in root.find("valence_states"):
             attrib = AttrDict(node.attrib)
-            assert attrib.id not in self.valence_states
+            if attrib.id in self.valence_states:
+                raise ValueError(f"{attrib.id=} should not be in {self.valence_states=}")
             self.valence_states[attrib.id] = attrib
 
         # Parse the radial grids
@@ -1228,7 +1228,8 @@ class PawXmlSetup(Pseudo, PawPseudo):
         for node in root.findall("radial_grid"):
             grid_params = node.attrib
             gid = grid_params["id"]
-            assert gid not in self.rad_grids
+            if gid in self.rad_grids:
+                raise ValueError(f"{gid=} should not be in {self.rad_grids=}")
 
             self.rad_grids[gid] = self._eval_grid(grid_params)
 
@@ -1597,7 +1598,8 @@ class PseudoTable(collections.abc.Sequence, MSONable):
     def __getitem__(self, Z):
         """Retrieve pseudos for the atomic number z. Accepts both int and slice objects."""
         if isinstance(Z, slice):
-            assert Z.stop is not None
+            if Z.stop is None:
+                raise ValueError("Z.stop is None")
             pseudos = []
             for znum in iterator_from_slice(Z):
                 pseudos.extend(self._pseudos_with_z[znum])
